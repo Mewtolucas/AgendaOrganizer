@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyFlow – AI Schedule Organizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ===================== API KEY MODAL ===================== -->
+<div id="apiKeyModal" class="modal-overlay" style="display:flex;">
+  <div class="modal-card api-key-card">
+    <div class="api-key-icon">📚</div>
+    <h2>Welcome to StudyFlow</h2>
+    <p class="api-key-subtitle">Your AI-powered personal planner. Enter your Anthropic API key to get started — it's stored only in your browser.</p>
+    <div class="form-group">
+      <label class="form-label" for="apiKeyInput">Anthropic API Key</label>
+      <input class="form-input" type="password" id="apiKeyInput" placeholder="sk-ant-api03-…" autocomplete="off" />
+      <span class="form-hint">Get your key at <strong>console.anthropic.com</strong></span>
+    </div>
+    <div id="apiKeyError" class="api-error hidden"></div>
+    <button class="btn btn-primary btn-full" id="saveApiKeyBtn">Get Started →</button>
+  </div>
+</div>
+
+<!-- ===================== MAIN APP ===================== -->
+<div id="app" class="app hidden">
+
+  <!-- -------- SIDEBAR -------- -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-logo">✦</span>
+      <span class="brand-name">StudyFlow</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-view="daily">
+        <span class="nav-icon">◷</span> Daily
+      </button>
+      <button class="nav-item" data-view="weekly">
+        <span class="nav-icon">▦</span> Weekly
+      </button>
+      <button class="nav-item" data-view="monthly">
+        <span class="nav-icon">◫</span> Monthly
+      </button>
+    </nav>
+
+    <div class="sidebar-divider"></div>
+
+    <!-- Stats -->
+    <div class="sidebar-section">
+      <p class="sidebar-section-title">Overview</p>
+      <div class="stats-grid">
+        <div class="stat-cell">
+          <span class="stat-num" id="statTotal">0</span>
+          <span class="stat-lbl">Tasks</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-num" id="statToday">0</span>
+          <span class="stat-lbl">Today</span>
+        </div>
+        <div class="stat-cell urgent">
+          <span class="stat-num" id="statUrgent">0</span>
+          <span class="stat-lbl">Urgent</span>
+        </div>
+        <div class="stat-cell done">
+          <span class="stat-num" id="statDone">0</span>
+          <span class="stat-lbl">Done</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <!-- Upcoming Tasks -->
+    <div class="sidebar-section upcoming-section">
+      <p class="sidebar-section-title">Upcoming Tasks</p>
+      <div id="upcomingList" class="upcoming-list">
+        <p class="empty-small">No tasks yet. Add one!</p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="sidebar-footer">
+      <button class="ghost-btn" id="settingsBtn">⚙ Settings</button>
+      <button class="ghost-btn" id="changeKeyBtn">🔑 API Key</button>
+    </div>
+  </aside>
+
+  <!-- -------- MAIN CONTENT -------- -->
+  <main class="main-area">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="topbar-title" id="viewTitle">Today's Schedule</h1>
+        <div class="date-nav" id="dateNav">
+          <button class="icon-btn" id="prevBtn">‹</button>
+          <span class="date-nav-label" id="dateNavLabel"></span>
+          <button class="icon-btn" id="nextBtn">›</button>
+          <button class="pill-btn" id="todayBtn">Today</button>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-ghost" id="regenerateBtn">🔄 Reschedule All</button>
+        <button class="btn btn-primary" id="addTaskBtn">＋ Add Task</button>
+      </div>
+    </header>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+      <div class="loading-box">
+        <div class="spinner"></div>
+        <p id="loadingMsg">Generating your AI schedule…</p>
+      </div>
+    </div>
+
+    <!-- ===== DAILY VIEW ===== -->
+    <div id="dailyView" class="view active-view">
+      <div class="daily-layout">
+
+        <!-- Timeline -->
+        <div class="timeline-wrap">
+          <div class="timeline-inner" id="dailyTimeline">
+            <!-- Hour rows injected by JS -->
+          </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="daily-panel">
+          <div class="panel-card">
+            <h3 class="panel-title">📌 Due Soon</h3>
+            <div id="dueSoonList" class="due-soon-list">
+              <p class="empty-small">All clear!</p>
+            </div>
+          </div>
+          <div class="panel-card mt-12">
+            <h3 class="panel-title">📋 All Tasks</h3>
+            <div id="taskListSidebar" class="task-sidebar-list">
+              <p class="empty-small">No tasks yet.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===== WEEKLY VIEW ===== -->
+    <div id="weeklyView" class="view hidden">
+      <div class="weekly-container">
+        <div id="weeklyGrid" class="weekly-grid">
+          <!-- Injected by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== MONTHLY VIEW ===== -->
+    <div id="monthlyView" class="view hidden">
+      <div class="monthly-container">
+        <div class="monthly-day-headers">
+          <div class="month-day-hdr">Sun</div>
+          <div class="month-day-hdr">Mon</div>
+          <div class="month-day-hdr">Tue</div>
+          <div class="month-day-hdr">Wed</div>
+          <div class="month-day-hdr">Thu</div>
+          <div class="month-day-hdr">Fri</div>
+          <div class="month-day-hdr">Sat</div>
+        </div>
+        <div id="monthlyGrid" class="monthly-grid">
+          <!-- Injected by JS -->
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div><!-- end #app -->
+
+
+<!-- ===================== ADD / EDIT TASK MODAL ===================== -->
+<div id="addTaskModal" class="modal-overlay hidden">
+  <div class="modal-card task-modal-card">
+    <div class="modal-header">
+      <h2 id="taskModalTitle">New Task</h2>
+      <button class="close-btn" data-close="addTaskModal">×</button>
+    </div>
+    <form id="taskForm" novalidate>
+      <input type="hidden" id="editTaskId" />
+
+      <div class="form-grid">
+        <div class="form-group col-2">
+          <label class="form-label">Task Name *</label>
+          <input class="form-input" type="text" id="fTaskName" placeholder="e.g. Math Homework" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Subject / Category *</label>
+          <input class="form-input" type="text" id="fTaskSubject" placeholder="e.g. Mathematics" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Priority</label>
+          <select class="form-input" id="fTaskPriority">
+            <option value="low">🟢 Low</option>
+            <option value="medium" selected>🟡 Medium</option>
+            <option value="high">🔴 High</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Due Date & Time *</label>
+          <input class="form-input" type="datetime-local" id="fTaskDue" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Estimated Time (hours) *</label>
+          <input class="form-input" type="number" id="fTaskHours" min="0.25" max="40" step="0.25" value="2" required />
+        </div>
+      </div>
+
+      <div id="taskFormError" class="form-error hidden"></div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close="addTaskModal">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="saveTaskBtn">
+          ✨ Save &amp; Schedule with AI
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+<!-- ===================== SETTINGS MODAL ===================== -->
+<div id="settingsModal" class="modal-overlay hidden">
+  <div class="modal-card settings-modal-card">
+    <div class="modal-header">
+      <h2>Settings</h2>
+      <button class="close-btn" data-close="settingsModal">×</button>
+    </div>
+
+    <!-- Recurring Classes -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">📅 Recurring Commitments</h3>
+      <p class="settings-desc">Block off time for fixed events — classes, sports, lessons, etc.</p>
+
+      <form id="classForm" class="class-form" novalidate>
+        <div class="form-grid">
+          <div class="form-group col-2">
+            <label class="form-label">Commitment Name *</label>
+            <input class="form-input" type="text" id="fClassName" placeholder="e.g. Soccer Practice" />
+          </div>
+          <div class="form-group col-2">
+            <label class="form-label">Days of Week</label>
+            <div class="days-picker">
+              <label class="day-chip"><input type="checkbox" value="sunday" /><span>Sun</span></label>
+              <label class="day-chip"><input type="checkbox" value="monday" /><span>Mon</span></label>
+              <label class="day-chip"><input type="checkbox" value="tuesday" /><span>Tue</span></label>
+              <label class="day-chip"><input type="checkbox" value="wednesday" /><span>Wed</span></label>
+              <label class="day-chip"><input type="checkbox" value="thursday" /><span>Thu</span></label>
+              <label class="day-chip"><input type="checkbox" value="friday" /><span>Fri</span></label>
+              <label class="day-chip"><input type="checkbox" value="saturday" /><span>Sat</span></label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Start Time</label>
+            <input class="form-input" type="time" id="fClassStart" value="15:00" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Time</label>
+            <input class="form-input" type="time" id="fClassEnd" value="16:00" />
+          </div>
+        </div>
+        <div id="classFormError" class="form-error hidden"></div>
+        <button type="submit" class="btn btn-secondary">+ Add Commitment</button>
+      </form>
+
+      <div id="classesList" class="classes-list">
+        <p class="empty-small">No commitments added.</p>
+      </div>
+    </div>
+
+    <!-- Work Hours -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">⏰ Available Study Hours</h3>
+      <p class="settings-desc">The AI will only schedule work sessions within these hours.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Day starts at</label>
+          <input class="form-input" type="time" id="fWorkStart" value="08:00" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Day ends at</label>
+          <input class="form-input" type="time" id="fWorkEnd" value="22:00" />
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close="settingsModal">Cancel</button>
+      <button class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== TASK DETAIL MODAL ===================== -->
+<div id="taskDetailModal" class="modal-overlay hidden">
+  <div class="modal-card task-detail-card">
+    <div class="modal-header">
+      <h2 id="detailTaskName">Task Name</h2>
+      <button class="close-btn" data-close="taskDetailModal">×</button>
+    </div>
+    <div id="taskDetailBody" class="task-detail-body"></div>
+    <div class="task-detail-sessions">
+      <h4>Scheduled Sessions</h4>
+      <div id="taskDetailSessions"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger-ghost" id="detailDeleteBtn">🗑 Delete</button>
+      <button class="btn btn-ghost" id="detailEditBtn">✏ Edit</button>
+      <button class="btn btn-success" id="detailCompleteBtn">✓ Mark Complete</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== TOAST ===================== -->
+<div id="toast" class="toast hidden">
+  <span id="toastMsg"></span>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
