@@ -1026,7 +1026,7 @@ document.getElementById('classForm').addEventListener('submit', e => {
   const name  = document.getElementById('fClassName').value.trim();
   const start = document.getElementById('fClassStart').value;
   const end   = document.getElementById('fClassEnd').value;
-  const days  = [...document.querySelectorAll('#settingsModal .days-picker input:checked')].map(i => i.value);
+  const days  = [...document.querySelectorAll('#settingsModal .settings-days-picker input:checked')].map(i => i.value);
 
   if (!name) { errEl.textContent = 'Please enter a name.'; errEl.classList.remove('hidden'); return; }
   if (days.length === 0) { errEl.textContent = 'Select at least one day.'; errEl.classList.remove('hidden'); return; }
@@ -1046,6 +1046,92 @@ function handleDeleteClass(id) {
   showToast('Commitment removed.', 'success');
 }
 window.handleDeleteClass = handleDeleteClass;
+
+// ============================================================
+// ADD CLASS MODAL
+// ============================================================
+
+// Preset day sets
+const DAY_PRESETS = {
+  everyday: ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'],
+  weekdays: ['monday','tuesday','wednesday','thursday','friday'],
+  weekends: ['saturday','sunday'],
+};
+
+function applyDayPreset(preset, pickerSelector) {
+  const values = DAY_PRESETS[preset] || [];
+  document.querySelectorAll(`${pickerSelector} input[type=checkbox]`).forEach(cb => {
+    cb.checked = values.includes(cb.value);
+  });
+}
+
+function openAddClassModal() {
+  document.getElementById('addClassForm').reset();
+  document.getElementById('acStart').value = '08:25';
+  document.getElementById('acEnd').value   = '15:15';
+  document.getElementById('addClassError').classList.add('hidden');
+  // Clear all preset active states
+  document.querySelectorAll('#addClassModal .preset-btn').forEach(b => b.classList.remove('active'));
+  openModal('addClassModal');
+}
+
+// Delegated handler for ALL preset buttons (both modals)
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.preset-btn');
+  if (!btn) return;
+  const preset = btn.dataset.preset;
+  const target = btn.dataset.target; // "settings" or undefined (= addClassModal)
+
+  if (target === 'settings') {
+    applyDayPreset(preset, '#settingsModal .settings-days-picker');
+    // Visual active state in Settings
+    document.querySelectorAll('#settingsModal .preset-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  } else {
+    applyDayPreset(preset, '#addClassModal .ac-days-picker');
+    // Visual active state in Add Class modal
+    document.querySelectorAll('#addClassModal .preset-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+});
+
+// Individual chip click clears active preset highlight
+document.addEventListener('change', e => {
+  if (e.target.closest('#addClassModal .ac-days-picker')) {
+    document.querySelectorAll('#addClassModal .preset-btn').forEach(b => b.classList.remove('active'));
+  }
+  if (e.target.closest('#settingsModal .settings-days-picker')) {
+    document.querySelectorAll('#settingsModal .preset-btn').forEach(b => b.classList.remove('active'));
+  }
+});
+
+// Add Class form submit
+document.getElementById('addClassForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const errEl = document.getElementById('addClassError');
+  errEl.classList.add('hidden');
+
+  const name  = document.getElementById('acName').value.trim();
+  const start = document.getElementById('acStart').value;
+  const end   = document.getElementById('acEnd').value;
+  const days  = [...document.querySelectorAll('#addClassModal .ac-days-picker input:checked')].map(i => i.value);
+
+  if (!name)              { errEl.textContent = 'Please enter a class name.'; errEl.classList.remove('hidden'); return; }
+  if (days.length === 0)  { errEl.textContent = 'Select at least one day.';   errEl.classList.remove('hidden'); return; }
+  if (timeToMinutes(start) >= timeToMinutes(end)) {
+    errEl.textContent = 'End time must be after start time.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  createClass({ name, days, start, end });
+  closeModal('addClassModal');
+  const daysLabel = days.length === 7 ? 'every day'
+    : days.length === 5 && !days.includes('saturday') && !days.includes('sunday') ? 'weekdays'
+    : days.map(d => d.slice(0,3).charAt(0).toUpperCase() + d.slice(1,3)).join(', ');
+  showToast(`"${name}" blocked ${daysLabel} ${formatTime12(start)}–${formatTime12(end)} ✅`, 'success');
+  renderAll();
+});
 
 document.getElementById('saveSettingsBtn').addEventListener('click', () => {
   state.settings.workStart = document.getElementById('fWorkStart').value;
@@ -1134,6 +1220,9 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 
 // Add Task
 document.getElementById('addTaskBtn').addEventListener('click', () => openAddTaskModal());
+
+// Add Class
+document.getElementById('addClassBtn').addEventListener('click', openAddClassModal);
 
 // Settings
 document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);

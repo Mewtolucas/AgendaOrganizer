@@ -337,6 +337,11 @@ a { color: var(--primary); }
 }
 .btn-danger-ghost:hover { background: #FEE2E2; }
 .btn-full { width: 100%; justify-content: center; }
+.btn-class {
+  background: #0891B2;
+  color: #fff;
+}
+.btn-class:hover { background: #0E7490; box-shadow: 0 4px 12px rgba(8,145,178,.3); }
 
 /* ---- Loading Overlay ---- */
 .loading-overlay {
@@ -989,6 +994,33 @@ a { color: var(--primary); }
   font-size: 12.5px;
   margin-top: 6px;
 }
+
+/* Quick-preset day buttons */
+.preset-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.preset-btn {
+  padding: 5px 13px;
+  border-radius: 20px;
+  border: 1.5px solid #0891B2;
+  color: #0891B2;
+  font-size: 12px;
+  font-weight: 600;
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.preset-btn:hover,
+.preset-btn.active {
+  background: #0891B2;
+  color: #fff;
+}
+
+/* Add Class modal */
+.add-class-card { max-width: 460px; }
+.add-class-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
 
 /* Days picker */
 .days-picker {

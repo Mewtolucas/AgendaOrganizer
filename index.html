@@ -107,6 +107,7 @@
       </div>
       <div class="topbar-right">
         <button class="btn btn-ghost" id="regenerateBtn">🔄 Reschedule All</button>
+        <button class="btn btn-class" id="addClassBtn">📅 Add Class</button>
         <button class="btn btn-primary" id="addTaskBtn">＋ Add Task</button>
       </div>
     </header>
@@ -230,6 +231,68 @@
 </div>
 
 
+<!-- ===================== ADD CLASS MODAL ===================== -->
+<div id="addClassModal" class="modal-overlay hidden">
+  <div class="modal-card add-class-card">
+    <div class="modal-header">
+      <h2>📅 Add Recurring Class</h2>
+      <button class="close-btn" data-close="addClassModal">×</button>
+    </div>
+
+    <form id="addClassForm" novalidate>
+      <div class="add-class-body">
+
+        <!-- Name -->
+        <div class="form-group">
+          <label class="form-label">Class / Commitment Name *</label>
+          <input class="form-input" type="text" id="acName"
+                 placeholder="e.g. School, Violin Practice, Soccer…" />
+        </div>
+
+        <!-- Quick-select presets -->
+        <div class="form-group">
+          <label class="form-label">Repeat</label>
+          <div class="preset-row">
+            <button type="button" class="preset-btn" data-preset="everyday">Every Day</button>
+            <button type="button" class="preset-btn" data-preset="weekdays">Weekdays</button>
+            <button type="button" class="preset-btn" data-preset="weekends">Weekends</button>
+          </div>
+          <!-- Individual day chips -->
+          <div class="days-picker ac-days-picker" style="margin-top:8px;">
+            <label class="day-chip"><input type="checkbox" value="sunday"    /><span>Sun</span></label>
+            <label class="day-chip"><input type="checkbox" value="monday"    /><span>Mon</span></label>
+            <label class="day-chip"><input type="checkbox" value="tuesday"   /><span>Tue</span></label>
+            <label class="day-chip"><input type="checkbox" value="wednesday" /><span>Wed</span></label>
+            <label class="day-chip"><input type="checkbox" value="thursday"  /><span>Thu</span></label>
+            <label class="day-chip"><input type="checkbox" value="friday"    /><span>Fri</span></label>
+            <label class="day-chip"><input type="checkbox" value="saturday"  /><span>Sat</span></label>
+          </div>
+        </div>
+
+        <!-- Time range -->
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Start Time *</label>
+            <input class="form-input" type="time" id="acStart" value="08:25" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Time *</label>
+            <input class="form-input" type="time" id="acEnd" value="15:15" />
+          </div>
+        </div>
+
+        <div id="addClassError" class="form-error hidden"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close="addClassModal">Cancel</button>
+        <button type="submit" class="btn btn-class">📅 Add to Schedule</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
 <!-- ===================== SETTINGS MODAL ===================== -->
 <div id="settingsModal" class="modal-overlay hidden">
   <div class="modal-card settings-modal-card">
@@ -251,7 +314,12 @@
           </div>
           <div class="form-group col-2">
             <label class="form-label">Days of Week</label>
-            <div class="days-picker">
+            <div class="preset-row" style="margin-bottom:8px;">
+              <button type="button" class="preset-btn" data-preset="everyday" data-target="settings">Every Day</button>
+              <button type="button" class="preset-btn" data-preset="weekdays" data-target="settings">Weekdays</button>
+              <button type="button" class="preset-btn" data-preset="weekends" data-target="settings">Weekends</button>
+            </div>
+            <div class="days-picker settings-days-picker">
               <label class="day-chip"><input type="checkbox" value="sunday" /><span>Sun</span></label>
               <label class="day-chip"><input type="checkbox" value="monday" /><span>Mon</span></label>
               <label class="day-chip"><input type="checkbox" value="tuesday" /><span>Tue</span></label>
