@@ -342,6 +342,24 @@ a { color: var(--primary); }
   color: #fff;
 }
 .btn-class:hover { background: #0E7490; box-shadow: 0 4px 12px rgba(8,145,178,.3); }
+.btn-event {
+  background: #D97706;
+  color: #fff;
+}
+.btn-event:hover { background: #B45309; box-shadow: 0 4px 12px rgba(217,119,6,.3); }
+.btn-habit {
+  background: #7C3AED;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  border: none;
+  margin-top: 10px;
+}
+.btn-habit:hover { background: #6D28D9; }
 
 /* ---- Loading Overlay ---- */
 .loading-overlay {
@@ -906,6 +924,13 @@ a { color: var(--primary); }
   transition: background var(--transition), color var(--transition);
 }
 .class-delete:hover { background: #FEE2E2; color: var(--danger); }
+.class-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-shrink: 0; }
+.class-edit {
+  background: none; border: none; padding: 4px 7px;
+  border-radius: var(--radius-sm); cursor: pointer; font-size: 14px;
+  color: var(--text-muted); transition: background var(--transition), color var(--transition);
+}
+.class-edit:hover { background: #EDE9FE; color: #6D28D9; }
 
 /* Task detail */
 .task-detail-card { max-width: 480px; }
@@ -1021,6 +1046,41 @@ a { color: var(--primary); }
 /* Add Class modal */
 .add-class-card { max-width: 460px; }
 .add-class-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+
+/* Add Event modal */
+.add-event-card { max-width: 440px; }
+.add-event-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+.event-allday-row { display: flex; align-items: center; gap: 8px; }
+.toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-muted); }
+.toggle-label input[type=checkbox] { width: 14px; height: 14px; accent-color: var(--primary); cursor: pointer; }
+
+/* Event / Habit items in Settings */
+.event-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #FEF3C7;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid #D97706;
+}
+.habit-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--primary-pale);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--primary);
+}
+.event-item .class-info,
+.habit-item .class-info { flex: 1; min-width: 0; }
+
+/* Timeline habit block */
+.tl-session.is-habit {
+  border-style: dashed !important;
+  opacity: .85;
+}
 
 /* Days picker */
 .days-picker {

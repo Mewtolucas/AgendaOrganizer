@@ -107,6 +107,7 @@
       </div>
       <div class="topbar-right">
         <button class="btn btn-ghost" id="regenerateBtn">🔄 Reschedule All</button>
+        <button class="btn btn-event" id="addEventBtn">🎉 Add Event</button>
         <button class="btn btn-class" id="addClassBtn">📅 Add Class</button>
         <button class="btn btn-primary" id="addTaskBtn">＋ Add Task</button>
       </div>
@@ -293,6 +294,57 @@
 </div>
 
 
+<!-- ===================== ADD EVENT MODAL ===================== -->
+<div id="addEventModal" class="modal-overlay hidden">
+  <div class="modal-card add-event-card">
+    <div class="modal-header">
+      <h2>🎉 Add One-Time Event</h2>
+      <button class="close-btn" data-close="addEventModal">×</button>
+    </div>
+    <form id="addEventForm" novalidate>
+      <div class="add-event-body">
+
+        <div class="form-group">
+          <label class="form-label">Event Name *</label>
+          <input class="form-input" type="text" id="evName"
+                 placeholder="e.g. Golf Tournament, Doctor Appointment, Field Trip…" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Date *</label>
+          <input class="form-input" type="date" id="evDate" />
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Start Time *</label>
+            <input class="form-input" type="time" id="evStart" value="09:00" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Time *</label>
+            <input class="form-input" type="time" id="evEnd" value="17:00" />
+          </div>
+        </div>
+
+        <div class="event-allday-row">
+          <label class="toggle-label">
+            <input type="checkbox" id="evAllDay" />
+            <span class="toggle-text">All-day event (blocks the whole day)</span>
+          </label>
+        </div>
+
+        <div id="addEventError" class="form-error hidden"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close="addEventModal">Cancel</button>
+        <button type="submit" class="btn btn-event">🎉 Add Event</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
 <!-- ===================== SETTINGS MODAL ===================== -->
 <div id="settingsModal" class="modal-overlay hidden">
   <div class="modal-card settings-modal-card">
@@ -344,6 +396,40 @@
 
       <div id="classesList" class="classes-list">
         <p class="empty-small">No commitments added.</p>
+      </div>
+    </div>
+
+    <!-- One-Time Events -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">🎉 One-Time Events</h3>
+      <p class="settings-desc">Single events that block your schedule on a specific date (tournaments, trips, appointments…).</p>
+      <div id="eventsList" class="classes-list">
+        <p class="empty-small">No events added.</p>
+      </div>
+    </div>
+
+    <!-- Daily Habits -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">🔁 Daily Habits</h3>
+      <p class="settings-desc">Low-priority practices filled into free time every day — the AI slots these around everything else.</p>
+
+      <form id="habitForm" class="class-form" novalidate>
+        <div class="form-grid">
+          <div class="form-group col-2">
+            <label class="form-label">Habit Name *</label>
+            <input class="form-input" type="text" id="fHabitName" placeholder="e.g. Piano, Reading, Stretching" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Duration (minutes) *</label>
+            <input class="form-input" type="number" id="fHabitMins" min="5" max="240" step="5" value="30" />
+          </div>
+        </div>
+        <div id="habitFormError" class="form-error hidden"></div>
+        <button type="submit" class="btn btn-habit">+ Add Habit</button>
+      </form>
+
+      <div id="habitsList" class="classes-list">
+        <p class="empty-small">No daily habits added.</p>
       </div>
     </div>
 

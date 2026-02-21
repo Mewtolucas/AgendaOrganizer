@@ -35,6 +35,8 @@ const state = {
   apiKey:          '',
   tasks:           [],      // Task[]
   classes:         [],      // RecurringClass[]
+  events:          [],      // OneTimeEvent[]
+  habits:          [],      // DailyHabit[]
   schedule:        [],      // ScheduleSession[]
   settings:        { workStart: '08:00', workEnd: '22:00' },
   currentView:     'daily',
@@ -51,6 +53,8 @@ function loadState() {
     state.apiKey   = localStorage.getItem('sf_apiKey')   || '';
     state.tasks    = JSON.parse(localStorage.getItem('sf_tasks')    || '[]');
     state.classes  = JSON.parse(localStorage.getItem('sf_classes')  || '[]');
+    state.events   = JSON.parse(localStorage.getItem('sf_events')   || '[]');
+    state.habits   = JSON.parse(localStorage.getItem('sf_habits')   || '[]');
     state.schedule = JSON.parse(localStorage.getItem('sf_schedule') || '[]');
     const saved    = JSON.parse(localStorage.getItem('sf_settings') || '{}');
     state.settings = { workStart: saved.workStart || '08:00', workEnd: saved.workEnd || '22:00' };
@@ -64,6 +68,8 @@ function saveState() {
   localStorage.setItem('sf_apiKey',   state.apiKey);
   localStorage.setItem('sf_tasks',    JSON.stringify(state.tasks));
   localStorage.setItem('sf_classes',  JSON.stringify(state.classes));
+  localStorage.setItem('sf_events',   JSON.stringify(state.events));
+  localStorage.setItem('sf_habits',   JSON.stringify(state.habits));
   localStorage.setItem('sf_schedule', JSON.stringify(state.schedule));
   localStorage.setItem('sf_settings', JSON.stringify(state.settings));
   localStorage.setItem('sf_colorMap', JSON.stringify(state.subjectColorMap));
@@ -258,6 +264,84 @@ async function generateSchedule(taskIds = null) {
 
   state.schedule = [...keptSessions, ...validSessions];
   saveState();
+  // Slot daily habits into free time across the scheduled date range
+  scheduleHabitsForDateRange(dateList);
+}
+
+// ============================================================
+// HABIT SCHEDULING — client-side, fills free time every day
+// ============================================================
+function scheduleHabitsForDateRange(dateList) {
+  // Remove existing habit sessions and re-place them fresh
+  state.schedule = state.schedule.filter(s => !s.isHabit);
+  if (state.habits.length === 0) { saveState(); return; }
+
+  const workStart = timeToMinutes(state.settings.workStart || '08:00');
+  const workEnd   = timeToMinutes(state.settings.workEnd   || '22:00');
+  const BUFFER    = 10; // minutes gap between sessions
+
+  for (const dateStr of dateList) {
+    // Build all occupied time blocks for this day
+    const occupied = [];
+    classesForDay(dateStr).forEach(c =>
+      occupied.push({ start: timeToMinutes(c.startTime), end: timeToMinutes(c.endTime) }));
+    eventsForDay(dateStr).forEach(e =>
+      occupied.push({ start: timeToMinutes(e.startTime), end: timeToMinutes(e.endTime) }));
+    state.schedule.filter(s => s.date === dateStr && !s.isHabit).forEach(s =>
+      occupied.push({ start: timeToMinutes(s.startTime), end: timeToMinutes(s.endTime) }));
+    occupied.sort((a, b) => a.start - b.start);
+
+    for (const habit of state.habits) {
+      const dur = habit.duration; // minutes
+      let cursor = workStart;
+      let placed = false;
+
+      for (const block of occupied) {
+        if (block.start >= cursor + dur) {
+          // Fits before this block
+          state.schedule.push({
+            id: uuid(), taskId: habit.id, taskName: habit.name,
+            subject: 'Habit', date: dateStr,
+            startTime: minutesToTime(cursor),
+            endTime:   minutesToTime(cursor + dur),
+            duration:  +(dur / 60).toFixed(2),
+            priority: 'low', completed: false, isHabit: true,
+          });
+          occupied.push({ start: cursor, end: cursor + dur });
+          occupied.sort((a, b) => a.start - b.start);
+          placed = true;
+          break;
+        }
+        cursor = Math.max(cursor, block.end + BUFFER);
+      }
+
+      // Fits after all blocks
+      if (!placed && cursor + dur <= workEnd) {
+        state.schedule.push({
+          id: uuid(), taskId: habit.id, taskName: habit.name,
+          subject: 'Habit', date: dateStr,
+          startTime: minutesToTime(cursor),
+          endTime:   minutesToTime(cursor + dur),
+          duration:  +(dur / 60).toFixed(2),
+          priority: 'low', completed: false, isHabit: true,
+        });
+      }
+    }
+  }
+  saveState();
+}
+
+// Returns a contiguous date range from today → last task session date
+function getScheduleDateRange() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const taskDates = state.schedule.filter(s => !s.isHabit).map(s => s.date);
+  if (taskDates.length === 0) return [dateKey(today)];
+  const maxDate = new Date(Math.max(...taskDates.map(d => new Date(d + 'T12:00:00'))));
+  const result = [];
+  let d = new Date(today);
+  while (d <= maxDate) { result.push(dateKey(d)); d = addDays(d, 1); }
+  return result;
 }
 
 function buildSchedulePrompt(tasks, dateList, now, nowTime) {
@@ -267,6 +351,15 @@ function buildSchedulePrompt(tasks, dateList, now, nowTime) {
         days:  c.days,
         start: c.start,
         end:   c.end,
+      })), null, 2)
+    : 'None';
+
+  const eventsStr = state.events.length
+    ? JSON.stringify(state.events.map(e => ({
+        name:  e.name,
+        date:  e.date,
+        start: e.allDay ? (state.settings.workStart || '08:00') : e.startTime,
+        end:   e.allDay ? (state.settings.workEnd   || '22:00') : e.endTime,
       })), null, 2)
     : 'None';
 
@@ -288,9 +381,11 @@ AVAILABLE DATES: ${dateList.join(', ')}
 TASKS TO SCHEDULE:
 ${tasksStr}
 
-RECURRING COMMITMENTS (block these time windows):
+RECURRING COMMITMENTS (block these time windows every week):
 ${classesStr}
-Each recurring commitment repeats every week on the listed days.
+
+ONE-TIME EVENTS (block these specific date/time windows — treat as immovable):
+${eventsStr}
 
 SCHEDULING PREFERENCES:
 - Work hours: ${state.settings.workStart} to ${state.settings.workEnd}
@@ -301,9 +396,9 @@ SCHEDULING RULES:
 1. Split each task across multiple sessions to cover its full estimatedTime.
 2. Never schedule a session after a task's dueDate.
 3. Today's sessions must start at or after the current time (${nowTime}).
-4. Never overlap any session with recurring commitments.
+4. Never overlap any session with recurring commitments or one-time events.
 5. Spread sessions across the available dates — do not pile everything on one day.
-6. High priority tasks get earlier slots; low priority can be pushed to later days.
+6. ALL tasks (high, medium, AND low priority) must actively fill available free time. Do NOT defer low or medium priority tasks to later days. Priority only controls ORDER within the same day — higher priority gets earlier slots. Leave no free hour unused when there are pending task sessions to place.
 7. Leave at least 15 minutes between sessions.
 8. For tasks due within 24 hours, schedule sessions today.
 9. Schedule sessions only within work hours: ${state.settings.workStart}–${state.settings.workEnd}.
@@ -390,6 +485,54 @@ function deleteClass(id) {
   saveState();
 }
 
+function updateClass(id, data) {
+  const idx = state.classes.findIndex(c => c.id === id);
+  if (idx === -1) return;
+  state.classes[idx] = { ...state.classes[idx], ...data };
+  saveState();
+}
+
+// ============================================================
+// ONE-TIME EVENT CRUD
+// ============================================================
+function createEvent(data) {
+  const ev = {
+    id:        uuid(),
+    name:      data.name.trim(),
+    date:      data.date,
+    startTime: data.startTime,
+    endTime:   data.endTime,
+    allDay:    data.allDay || false,
+  };
+  state.events.push(ev);
+  saveState();
+  return ev;
+}
+
+function deleteEvent(id) {
+  state.events = state.events.filter(e => e.id !== id);
+  saveState();
+}
+
+// ============================================================
+// DAILY HABIT CRUD
+// ============================================================
+function createHabit(data) {
+  const habit = {
+    id:       uuid(),
+    name:     data.name.trim(),
+    duration: parseInt(data.duration, 10), // minutes
+  };
+  state.habits.push(habit);
+  saveState();
+  return habit;
+}
+
+function deleteHabit(id) {
+  state.habits = state.habits.filter(h => h.id !== id);
+  saveState();
+}
+
 // ============================================================
 // SCHEDULE QUERIES
 // ============================================================
@@ -412,10 +555,31 @@ function classesForDay(dateStr) {
     }));
 }
 
+function eventsForDay(dateStr) {
+  return state.events
+    .filter(e => e.date === dateStr)
+    .map(e => ({
+      ...e,
+      startTime: e.allDay ? (state.settings.workStart || '08:00') : e.startTime,
+      endTime:   e.allDay ? (state.settings.workEnd   || '22:00') : e.endTime,
+      isEvent:   true,
+      isClass:   false,
+    }));
+}
+
+function habitSessionsForDay(dateStr) {
+  // Habit sessions are stored in state.schedule with isHabit: true
+  return state.schedule.filter(s => s.date === dateStr && s.isHabit);
+}
+
 function allBlocksForDay(dateStr) {
-  const sessions = sessionsForDay(dateStr).map(s => ({ ...s, name: s.taskName, isClass: false }));
-  const classes  = classesForDay(dateStr);
-  return [...sessions, ...classes].sort((a, b) =>
+  const sessions = sessionsForDay(dateStr)
+    .filter(s => !s.isHabit)
+    .map(s => ({ ...s, name: s.taskName, isClass: false }));
+  const habits  = habitSessionsForDay(dateStr).map(s => ({ ...s, name: s.taskName, isHabit: true, isClass: false }));
+  const classes = classesForDay(dateStr);
+  const events  = eventsForDay(dateStr);
+  return [...sessions, ...habits, ...classes, ...events].sort((a, b) =>
     timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
 }
 
@@ -423,7 +587,9 @@ function allBlocksForDay(dateStr) {
 // COLOUR HELPER FOR SESSIONS
 // ============================================================
 function sessionStyle(block) {
-  if (block.isClass) return { bg: 'rgba(6,182,212,.15)', fg: '#0E7490', border: 'rgba(6,182,212,.3)' };
+  if (block.isClass) return { bg: 'rgba(6,182,212,.15)', fg: '#0E7490',  border: 'rgba(6,182,212,.3)' };
+  if (block.isEvent) return { bg: '#FEF3C7',             fg: '#92400E',  border: '#FDE68A' };
+  if (block.isHabit) return { bg: '#EDE9FE',             fg: '#5B21B6',  border: '#DDD6FE' };
   return subjectColor(block.subject);
 }
 
@@ -494,7 +660,11 @@ function renderDailyView() {
 
     const col = sessionStyle(block);
     const el  = document.createElement('div');
-    el.className = 'tl-session' + (block.isClass ? ' is-class' : '') + (block.completed ? ' completed' : '');
+    el.className = 'tl-session'
+      + (block.isClass ? ' is-class' : '')
+      + (block.isEvent ? ' is-event' : '')
+      + (block.isHabit ? ' is-habit' : '')
+      + (block.completed ? ' completed' : '');
     el.style.cssText = `top:${top}px;height:${Math.max(height,22)}px;background:${col.bg};color:${col.fg};border:1px solid ${col.border};left:58px;right:6px;`;
 
     const nameEl = document.createElement('div');
@@ -508,7 +678,7 @@ function renderDailyView() {
     el.appendChild(nameEl);
     if (height > 30) el.appendChild(timeEl);
 
-    if (!block.isClass) {
+    if (!block.isClass && !block.isEvent && !block.isHabit) {
       el.addEventListener('click', () => openTaskDetail(block.taskId));
     }
     tl.appendChild(el);
@@ -618,7 +788,7 @@ function renderWeeklyView() {
         card.innerHTML = `
           <div class="weekly-session-name">${esc(block.name)}</div>
           <div class="weekly-session-time">${formatTimeRange(block.startTime, block.endTime)}</div>`;
-        if (!block.isClass) {
+        if (!block.isClass && !block.isEvent && !block.isHabit) {
           card.addEventListener('click', () => openTaskDetail(block.taskId));
         }
         sessions.appendChild(card);
@@ -990,10 +1160,11 @@ window.handleToggleComplete = handleToggleComplete;
 // SETTINGS MODAL
 // ============================================================
 function openSettingsModal() {
-  // Pre-fill work hours
   document.getElementById('fWorkStart').value = state.settings.workStart;
   document.getElementById('fWorkEnd').value   = state.settings.workEnd;
   renderClassesList();
+  renderEventsList();
+  renderHabitsList();
   openModal('settingsModal');
 }
 
@@ -1013,7 +1184,10 @@ function renderClassesList() {
           <div class="class-name">${esc(c.name)}</div>
           <div class="class-meta">${daysStr} • ${formatTime12(c.start)} – ${formatTime12(c.end)}</div>
         </div>
-        <button class="class-delete" onclick="handleDeleteClass('${c.id}')">✕</button>
+        <div class="class-actions">
+          <button class="class-edit" onclick="handleEditClass('${c.id}')">✏</button>
+          <button class="class-delete" onclick="handleDeleteClass('${c.id}')">✕</button>
+        </div>
       </div>`;
   }).join('');
 }
@@ -1043,9 +1217,160 @@ document.getElementById('classForm').addEventListener('submit', e => {
 function handleDeleteClass(id) {
   deleteClass(id);
   renderClassesList();
+  renderAll();
   showToast('Commitment removed.', 'success');
 }
 window.handleDeleteClass = handleDeleteClass;
+
+function handleEditClass(id) {
+  const cls = state.classes.find(c => c.id === id);
+  if (!cls) return;
+  openAddClassModal();
+  // Pre-fill fields
+  document.getElementById('acName').value  = cls.name;
+  document.getElementById('acStart').value = cls.start;
+  document.getElementById('acEnd').value   = cls.end;
+  document.querySelectorAll('#addClassModal .ac-days-picker input[type=checkbox]').forEach(cb => {
+    cb.checked = cls.days.includes(cb.value);
+  });
+  // Change modal title and submit button to indicate editing
+  document.querySelector('#addClassModal h2').textContent = '✏ Edit Recurring Class';
+  document.querySelector('#addClassModal [type=submit]').textContent = '💾 Save Changes';
+  // Store edit target
+  document.getElementById('addClassForm').dataset.editId = id;
+}
+window.handleEditClass = handleEditClass;
+
+function renderEventsList() {
+  const list = document.getElementById('eventsList');
+  if (state.events.length === 0) {
+    list.innerHTML = '<p class="empty-small">No events added.</p>';
+    return;
+  }
+  list.innerHTML = state.events.map(e => {
+    const timeStr = e.allDay ? 'All day' : `${formatTime12(e.startTime)} – ${formatTime12(e.endTime)}`;
+    return `
+      <div class="event-item">
+        <div class="class-info">
+          <div class="class-name">${esc(e.name)}</div>
+          <div class="class-meta">${esc(e.date)} • ${timeStr}</div>
+        </div>
+        <button class="class-delete" onclick="handleDeleteEvent('${e.id}')">✕</button>
+      </div>`;
+  }).join('');
+}
+
+function renderHabitsList() {
+  const list = document.getElementById('habitsList');
+  if (state.habits.length === 0) {
+    list.innerHTML = '<p class="empty-small">No daily habits added.</p>';
+    return;
+  }
+  list.innerHTML = state.habits.map(h => `
+    <div class="habit-item">
+      <div class="class-info">
+        <div class="class-name">${esc(h.name)}</div>
+        <div class="class-meta">${h.duration} min/day — fills free time</div>
+      </div>
+      <button class="class-delete" onclick="handleDeleteHabit('${h.id}')">✕</button>
+    </div>`).join('');
+}
+
+function handleDeleteEvent(id) {
+  const ev = state.events.find(e => e.id === id);
+  deleteEvent(id);
+  renderEventsList();
+  renderAll();
+  if (ev) showToast(`"${ev.name}" removed.`, 'success');
+}
+window.handleDeleteEvent = handleDeleteEvent;
+
+function handleDeleteHabit(id) {
+  const habit = state.habits.find(h => h.id === id);
+  deleteHabit(id);
+  scheduleHabitsForDateRange(getScheduleDateRange());
+  renderHabitsList();
+  renderAll();
+  if (habit) showToast(`"${habit.name}" habit removed.`, 'success');
+}
+window.handleDeleteHabit = handleDeleteHabit;
+
+// ============================================================
+// ADD EVENT MODAL
+// ============================================================
+function openAddEventModal() {
+  document.getElementById('addEventForm').reset();
+  document.getElementById('addEventError').classList.add('hidden');
+  document.getElementById('evDate').value  = dateKey(new Date());
+  document.getElementById('evStart').value = '09:00';
+  document.getElementById('evEnd').value   = '17:00';
+  document.getElementById('evStart').disabled = false;
+  document.getElementById('evEnd').disabled   = false;
+  openModal('addEventModal');
+}
+
+// Toggle time fields on all-day checkbox
+document.getElementById('evAllDay').addEventListener('change', function () {
+  document.getElementById('evStart').disabled = this.checked;
+  document.getElementById('evEnd').disabled   = this.checked;
+});
+
+document.getElementById('addEventForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const errEl  = document.getElementById('addEventError');
+  errEl.classList.add('hidden');
+
+  const name   = document.getElementById('evName').value.trim();
+  const date   = document.getElementById('evDate').value;
+  const start  = document.getElementById('evStart').value;
+  const end    = document.getElementById('evEnd').value;
+  const allDay = document.getElementById('evAllDay').checked;
+
+  if (!name) { errEl.textContent = 'Please enter an event name.'; errEl.classList.remove('hidden'); return; }
+  if (!date) { errEl.textContent = 'Please select a date.';       errEl.classList.remove('hidden'); return; }
+  if (!allDay && timeToMinutes(start) >= timeToMinutes(end)) {
+    errEl.textContent = 'End time must be after start time.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  createEvent({ name, date, startTime: start, endTime: end, allDay });
+  closeModal('addEventModal');
+  showToast(`"${name}" added on ${date} ✅`, 'success');
+  renderAll();
+});
+
+// ============================================================
+// HABIT FORM (inside Settings modal)
+// ============================================================
+document.getElementById('habitForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const errEl = document.getElementById('habitFormError');
+  errEl.classList.add('hidden');
+
+  const name = document.getElementById('fHabitName').value.trim();
+  const mins = parseInt(document.getElementById('fHabitMins').value, 10);
+
+  if (!name) {
+    errEl.textContent = 'Please enter a habit name.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (!mins || mins < 5 || mins > 240) {
+    errEl.textContent = 'Duration must be between 5 and 240 minutes.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  createHabit({ name, duration: mins });
+  document.getElementById('fHabitName').value = '';
+  document.getElementById('fHabitMins').value = '30';
+  // Re-slot habits into existing schedule dates
+  scheduleHabitsForDateRange(getScheduleDateRange());
+  renderHabitsList();
+  showToast(`"${name}" habit added — filling your free time! 🎵`, 'success');
+  renderAll();
+});
 
 // ============================================================
 // ADD CLASS MODAL
@@ -1067,10 +1392,12 @@ function applyDayPreset(preset, pickerSelector) {
 
 function openAddClassModal() {
   document.getElementById('addClassForm').reset();
+  delete document.getElementById('addClassForm').dataset.editId;
   document.getElementById('acStart').value = '08:25';
   document.getElementById('acEnd').value   = '15:15';
   document.getElementById('addClassError').classList.add('hidden');
-  // Clear all preset active states
+  document.querySelector('#addClassModal h2').textContent = '📅 Add Recurring Class';
+  document.querySelector('#addClassModal [type=submit]').textContent = '📅 Add to Schedule';
   document.querySelectorAll('#addClassModal .preset-btn').forEach(b => b.classList.remove('active'));
   openModal('addClassModal');
 }
@@ -1105,31 +1432,38 @@ document.addEventListener('change', e => {
   }
 });
 
-// Add Class form submit
+// Add / Edit Class form submit
 document.getElementById('addClassForm').addEventListener('submit', e => {
   e.preventDefault();
   const errEl = document.getElementById('addClassError');
   errEl.classList.add('hidden');
 
-  const name  = document.getElementById('acName').value.trim();
-  const start = document.getElementById('acStart').value;
-  const end   = document.getElementById('acEnd').value;
-  const days  = [...document.querySelectorAll('#addClassModal .ac-days-picker input:checked')].map(i => i.value);
+  const name   = document.getElementById('acName').value.trim();
+  const start  = document.getElementById('acStart').value;
+  const end    = document.getElementById('acEnd').value;
+  const days   = [...document.querySelectorAll('#addClassModal .ac-days-picker input:checked')].map(i => i.value);
+  const editId = document.getElementById('addClassForm').dataset.editId;
 
-  if (!name)              { errEl.textContent = 'Please enter a class name.'; errEl.classList.remove('hidden'); return; }
-  if (days.length === 0)  { errEl.textContent = 'Select at least one day.';   errEl.classList.remove('hidden'); return; }
+  if (!name)             { errEl.textContent = 'Please enter a class name.'; errEl.classList.remove('hidden'); return; }
+  if (days.length === 0) { errEl.textContent = 'Select at least one day.';   errEl.classList.remove('hidden'); return; }
   if (timeToMinutes(start) >= timeToMinutes(end)) {
     errEl.textContent = 'End time must be after start time.';
     errEl.classList.remove('hidden');
     return;
   }
 
-  createClass({ name, days, start, end });
-  closeModal('addClassModal');
-  const daysLabel = days.length === 7 ? 'every day'
-    : days.length === 5 && !days.includes('saturday') && !days.includes('sunday') ? 'weekdays'
-    : days.map(d => d.slice(0,3).charAt(0).toUpperCase() + d.slice(1,3)).join(', ');
-  showToast(`"${name}" blocked ${daysLabel} ${formatTime12(start)}–${formatTime12(end)} ✅`, 'success');
+  if (editId) {
+    updateClass(editId, { name, days, start, end });
+    closeModal('addClassModal');
+    showToast(`"${name}" updated ✅`, 'success');
+  } else {
+    createClass({ name, days, start, end });
+    closeModal('addClassModal');
+    const daysLabel = days.length === 7 ? 'every day'
+      : days.length === 5 && !days.includes('saturday') && !days.includes('sunday') ? 'weekdays'
+      : days.map(d => d.slice(0,3).charAt(0).toUpperCase() + d.slice(1,3)).join(', ');
+    showToast(`"${name}" blocked ${daysLabel} ${formatTime12(start)}–${formatTime12(end)} ✅`, 'success');
+  }
   renderAll();
 });
 
@@ -1220,6 +1554,9 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 
 // Add Task
 document.getElementById('addTaskBtn').addEventListener('click', () => openAddTaskModal());
+
+// Add Event
+document.getElementById('addEventBtn').addEventListener('click', openAddEventModal);
 
 // Add Class
 document.getElementById('addClassBtn').addEventListener('click', openAddClassModal);
