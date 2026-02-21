@@ -533,6 +533,20 @@ function deleteHabit(id) {
   saveState();
 }
 
+function updateEvent(id, data) {
+  const idx = state.events.findIndex(e => e.id === id);
+  if (idx === -1) return;
+  state.events[idx] = { ...state.events[idx], ...data };
+  saveState();
+}
+
+function updateHabit(id, data) {
+  const idx = state.habits.findIndex(h => h.id === id);
+  if (idx === -1) return;
+  state.habits[idx] = { ...state.habits[idx], ...data };
+  saveState();
+}
+
 // ============================================================
 // SCHEDULE QUERIES
 // ============================================================
@@ -547,6 +561,7 @@ function classesForDay(dateStr) {
     .filter(c => c.days.includes(dow))
     .map(c => ({
       id:        'class-' + c.id + '-' + dateStr,
+      classId:   c.id,  // real class ID for editing/deleting
       isClass:   true,
       name:      c.name,
       startTime: c.start,
@@ -678,7 +693,10 @@ function renderDailyView() {
     el.appendChild(nameEl);
     if (height > 30) el.appendChild(timeEl);
 
-    if (!block.isClass && !block.isEvent && !block.isHabit) {
+    if (block.isClass || block.isEvent || block.isHabit) {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => openBlockDetail(block));
+    } else {
       el.addEventListener('click', () => openTaskDetail(block.taskId));
     }
     tl.appendChild(el);
@@ -788,7 +806,10 @@ function renderWeeklyView() {
         card.innerHTML = `
           <div class="weekly-session-name">${esc(block.name)}</div>
           <div class="weekly-session-time">${formatTimeRange(block.startTime, block.endTime)}</div>`;
-        if (!block.isClass && !block.isEvent && !block.isHabit) {
+        if (block.isClass || block.isEvent || block.isHabit) {
+          card.style.cursor = 'pointer';
+          card.addEventListener('click', () => openBlockDetail(block));
+        } else {
           card.addEventListener('click', () => openTaskDetail(block.taskId));
         }
         sessions.appendChild(card);
@@ -1225,21 +1246,126 @@ window.handleDeleteClass = handleDeleteClass;
 function handleEditClass(id) {
   const cls = state.classes.find(c => c.id === id);
   if (!cls) return;
+  // Close any open modals first so there's no stacking conflict
+  closeModal('settingsModal');
+  closeModal('blockDetailModal');
+  // Open the Add Class modal fresh, then pre-fill
   openAddClassModal();
-  // Pre-fill fields
   document.getElementById('acName').value  = cls.name;
   document.getElementById('acStart').value = cls.start;
   document.getElementById('acEnd').value   = cls.end;
   document.querySelectorAll('#addClassModal .ac-days-picker input[type=checkbox]').forEach(cb => {
     cb.checked = cls.days.includes(cb.value);
   });
-  // Change modal title and submit button to indicate editing
   document.querySelector('#addClassModal h2').textContent = '✏ Edit Recurring Class';
   document.querySelector('#addClassModal [type=submit]').textContent = '💾 Save Changes';
-  // Store edit target
   document.getElementById('addClassForm').dataset.editId = id;
 }
 window.handleEditClass = handleEditClass;
+
+// ============================================================
+// BLOCK DETAIL MODAL — for clicking class / event / habit blocks
+// ============================================================
+function openBlockDetail(block) {
+  const body   = document.getElementById('blockDetailBody');
+  const footer = document.getElementById('blockDetailFooter');
+
+  document.getElementById('blockDetailTitle').textContent = block.name;
+
+  if (block.isClass) {
+    const cls = state.classes.find(c => c.id === block.classId);
+    const daysStr = cls
+      ? cls.days.map(d => d.slice(0,3).charAt(0).toUpperCase() + d.slice(1,3)).join(', ')
+      : '';
+    body.innerHTML = `
+      <div class="bd-type-tag bd-class">📅 Recurring Class</div>
+      <div class="bd-row"><span class="bd-lbl">Time</span><span>${formatTimeRange(block.startTime, block.endTime)}</span></div>
+      <div class="bd-row"><span class="bd-lbl">Days</span><span>${esc(daysStr)}</span></div>
+      <div class="bd-row"><span class="bd-lbl">Repeats</span><span>Every week</span></div>`;
+    footer.innerHTML = `
+      <button class="btn btn-danger-ghost" id="bdDeleteBtn">🗑 Remove</button>
+      <button class="btn btn-ghost" id="bdEditBtn">✏ Edit Class</button>
+      <button class="btn btn-ghost" data-close="blockDetailModal">Close</button>`;
+    document.getElementById('bdDeleteBtn').onclick = () => {
+      if (!confirm(`Remove "${block.name}" from your recurring schedule?`)) return;
+      deleteClass(block.classId);
+      closeModal('blockDetailModal');
+      renderAll();
+      showToast(`"${block.name}" removed.`, 'success');
+    };
+    document.getElementById('bdEditBtn').onclick = () => handleEditClass(block.classId);
+
+  } else if (block.isEvent) {
+    const orig = state.events.find(e => e.id === block.id);
+    const timeStr = (orig && orig.allDay) ? 'All day' : formatTimeRange(block.startTime, block.endTime);
+    body.innerHTML = `
+      <div class="bd-type-tag bd-event">🎉 One-Time Event</div>
+      <div class="bd-row"><span class="bd-lbl">Date</span><span>${esc(block.date)}</span></div>
+      <div class="bd-row"><span class="bd-lbl">Time</span><span>${timeStr}</span></div>`;
+    footer.innerHTML = `
+      <button class="btn btn-danger-ghost" id="bdDeleteBtn">🗑 Delete</button>
+      <button class="btn btn-ghost" id="bdEditBtn">✏ Edit Event</button>
+      <button class="btn btn-ghost" data-close="blockDetailModal">Close</button>`;
+    document.getElementById('bdDeleteBtn').onclick = () => {
+      if (!confirm(`Delete "${block.name}"?`)) return;
+      deleteEvent(block.id);
+      closeModal('blockDetailModal');
+      renderAll();
+      showToast(`"${block.name}" deleted.`, 'success');
+    };
+    document.getElementById('bdEditBtn').onclick = () => {
+      closeModal('blockDetailModal');
+      openAddEventModal(block.id);
+    };
+
+  } else if (block.isHabit) {
+    const habit = state.habits.find(h => h.id === block.taskId);
+    body.innerHTML = `
+      <div class="bd-type-tag bd-habit">🔁 Daily Habit</div>
+      <div class="bd-row"><span class="bd-lbl">Time</span><span>${formatTimeRange(block.startTime, block.endTime)}</span></div>
+      <div class="bd-row"><span class="bd-lbl">Duration</span><span>${habit ? habit.duration : '?'} min/day</span></div>
+      <div class="bd-row"><span class="bd-lbl">Frequency</span><span>Every day — fills free time</span></div>
+      <div class="bd-edit-section">
+        <p class="bd-edit-label">Quick edit</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Name</label>
+            <input class="form-input" type="text" id="bdHabitName" value="${esc(habit ? habit.name : '')}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Duration (min)</label>
+            <input class="form-input" type="number" id="bdHabitMins" min="5" max="240" step="5"
+                   value="${habit ? habit.duration : 30}" />
+          </div>
+        </div>
+      </div>`;
+    footer.innerHTML = `
+      <button class="btn btn-danger-ghost" id="bdDeleteBtn">🗑 Remove Habit</button>
+      <button class="btn btn-primary" id="bdSaveBtn">💾 Save Changes</button>
+      <button class="btn btn-ghost" data-close="blockDetailModal">Cancel</button>`;
+    document.getElementById('bdDeleteBtn').onclick = () => {
+      if (!confirm(`Remove "${block.name}" habit from your daily schedule?`)) return;
+      deleteHabit(block.taskId);
+      scheduleHabitsForDateRange(getScheduleDateRange());
+      closeModal('blockDetailModal');
+      renderAll();
+      showToast(`"${block.name}" habit removed.`, 'success');
+    };
+    document.getElementById('bdSaveBtn').onclick = () => {
+      const name = document.getElementById('bdHabitName').value.trim();
+      const mins = parseInt(document.getElementById('bdHabitMins').value, 10);
+      if (!name) { showToast('Please enter a habit name.', 'error'); return; }
+      if (!mins || mins < 5 || mins > 240) { showToast('Duration must be 5–240 minutes.', 'error'); return; }
+      updateHabit(block.taskId, { name, duration: mins });
+      scheduleHabitsForDateRange(getScheduleDateRange());
+      closeModal('blockDetailModal');
+      renderAll();
+      showToast(`"${name}" updated ✅`, 'success');
+    };
+  }
+
+  openModal('blockDetailModal');
+}
 
 function renderEventsList() {
   const list = document.getElementById('eventsList');
@@ -1298,14 +1424,33 @@ window.handleDeleteHabit = handleDeleteHabit;
 // ============================================================
 // ADD EVENT MODAL
 // ============================================================
-function openAddEventModal() {
+function openAddEventModal(editId = null) {
   document.getElementById('addEventForm').reset();
+  delete document.getElementById('addEventForm').dataset.editId;
   document.getElementById('addEventError').classList.add('hidden');
   document.getElementById('evDate').value  = dateKey(new Date());
   document.getElementById('evStart').value = '09:00';
   document.getElementById('evEnd').value   = '17:00';
   document.getElementById('evStart').disabled = false;
   document.getElementById('evEnd').disabled   = false;
+  document.querySelector('#addEventModal h2').textContent = '🎉 Add One-Time Event';
+  document.querySelector('#addEventModal [type=submit]').textContent = '🎉 Add Event';
+
+  if (editId) {
+    const ev = state.events.find(e => e.id === editId);
+    if (ev) {
+      document.getElementById('evName').value  = ev.name;
+      document.getElementById('evDate').value  = ev.date;
+      document.getElementById('evStart').value = ev.startTime || '09:00';
+      document.getElementById('evEnd').value   = ev.endTime   || '17:00';
+      document.getElementById('evAllDay').checked     = ev.allDay || false;
+      document.getElementById('evStart').disabled     = ev.allDay || false;
+      document.getElementById('evEnd').disabled       = ev.allDay || false;
+      document.getElementById('addEventForm').dataset.editId = editId;
+      document.querySelector('#addEventModal h2').textContent = '✏ Edit Event';
+      document.querySelector('#addEventModal [type=submit]').textContent = '💾 Save Changes';
+    }
+  }
   openModal('addEventModal');
 }
 
@@ -1326,6 +1471,8 @@ document.getElementById('addEventForm').addEventListener('submit', e => {
   const end    = document.getElementById('evEnd').value;
   const allDay = document.getElementById('evAllDay').checked;
 
+  const editId = document.getElementById('addEventForm').dataset.editId;
+
   if (!name) { errEl.textContent = 'Please enter an event name.'; errEl.classList.remove('hidden'); return; }
   if (!date) { errEl.textContent = 'Please select a date.';       errEl.classList.remove('hidden'); return; }
   if (!allDay && timeToMinutes(start) >= timeToMinutes(end)) {
@@ -1334,9 +1481,15 @@ document.getElementById('addEventForm').addEventListener('submit', e => {
     return;
   }
 
-  createEvent({ name, date, startTime: start, endTime: end, allDay });
-  closeModal('addEventModal');
-  showToast(`"${name}" added on ${date} ✅`, 'success');
+  if (editId) {
+    updateEvent(editId, { name, date, startTime: start, endTime: end, allDay });
+    closeModal('addEventModal');
+    showToast(`"${name}" updated ✅`, 'success');
+  } else {
+    createEvent({ name, date, startTime: start, endTime: end, allDay });
+    closeModal('addEventModal');
+    showToast(`"${name}" added on ${date} ✅`, 'success');
+  }
   renderAll();
 });
 
