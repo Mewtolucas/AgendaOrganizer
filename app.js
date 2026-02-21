@@ -413,7 +413,7 @@ function classesForDay(dateStr) {
 }
 
 function allBlocksForDay(dateStr) {
-  const sessions = sessionsForDay(dateStr).map(s => ({ ...s, isClass: false }));
+  const sessions = sessionsForDay(dateStr).map(s => ({ ...s, name: s.taskName, isClass: false }));
   const classes  = classesForDay(dateStr);
   return [...sessions, ...classes].sort((a, b) =>
     timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
