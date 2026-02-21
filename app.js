@@ -255,7 +255,18 @@ async function generateSchedule(taskIds = null) {
       duration:  s.duration   || 1,
       priority:  s.priority   || 'medium',
       completed: false,
-    }));
+    }))
+    // Safety net: strip any session that overlaps a class or event block
+    .filter(s => {
+      const sStart = timeToMinutes(s.startTime);
+      const sEnd   = timeToMinutes(s.endTime);
+      for (const block of [...classesForDay(s.date), ...eventsForDay(s.date)]) {
+        const bStart = timeToMinutes(block.startTime);
+        const bEnd   = timeToMinutes(block.endTime);
+        if (!(sEnd <= bStart || sStart >= bEnd)) return false; // overlaps — reject
+      }
+      return true;
+    });
 
   // Remove old sessions for the re-scheduled tasks, keep others
   const keptSessions = taskIds
@@ -372,6 +383,24 @@ function buildSchedulePrompt(tasks, dateList, now, nowTime) {
     priority:      t.priority,
   })), null, 2);
 
+  // Pre-compute exact blocked windows per date so the AI has zero ambiguity
+  const blockedByDate = {};
+  for (const dateStr of dateList) {
+    const blocks = [];
+    classesForDay(dateStr).forEach(c => blocks.push(`${c.startTime}–${c.endTime} [${c.name}]`));
+    eventsForDay(dateStr).forEach(e => {
+      const s = e.allDay ? (state.settings.workStart || '08:00') : e.startTime;
+      const f = e.allDay ? (state.settings.workEnd   || '22:00') : e.endTime;
+      blocks.push(`${s}–${f} [${e.name}]`);
+    });
+    if (blocks.length) blockedByDate[dateStr] = blocks;
+  }
+  const blockedStr = Object.keys(blockedByDate).length
+    ? Object.entries(blockedByDate)
+        .map(([d, bs]) => `  ${d}: ${bs.join(', ')}`)
+        .join('\n')
+    : '  (none — all work hours are free)';
+
   return `You are StudyFlow's AI scheduling engine. Generate an optimal study schedule.
 
 TODAY: ${now.toISOString()}
@@ -381,11 +410,14 @@ AVAILABLE DATES: ${dateList.join(', ')}
 TASKS TO SCHEDULE:
 ${tasksStr}
 
-RECURRING COMMITMENTS (block these time windows every week):
+RECURRING COMMITMENTS (for reference — already reflected in BLOCKED WINDOWS below):
 ${classesStr}
 
-ONE-TIME EVENTS (block these specific date/time windows — treat as immovable):
+ONE-TIME EVENTS (for reference — already reflected in BLOCKED WINDOWS below):
 ${eventsStr}
+
+BLOCKED WINDOWS BY DATE (HARD CONSTRAINT — never place any session inside these ranges):
+${blockedStr}
 
 SCHEDULING PREFERENCES:
 - Work hours: ${state.settings.workStart} to ${state.settings.workEnd}
@@ -396,9 +428,9 @@ SCHEDULING RULES:
 1. Split each task across multiple sessions to cover its full estimatedTime.
 2. Never schedule a session after a task's dueDate.
 3. Today's sessions must start at or after the current time (${nowTime}).
-4. Never overlap any session with recurring commitments or one-time events.
+4. CRITICAL: Never overlap any session with any blocked window listed above. Check every session against the BLOCKED WINDOWS BY DATE list before placing it.
 5. Spread sessions across the available dates — do not pile everything on one day.
-6. ALL tasks (high, medium, AND low priority) must actively fill available free time. Do NOT defer low or medium priority tasks to later days. Priority only controls ORDER within the same day — higher priority gets earlier slots. Leave no free hour unused when there are pending task sessions to place.
+6. ALL tasks (high, medium, AND low priority) must actively fill available free time. Priority only controls ORDER within the same day — higher priority gets earlier slots.
 7. Leave at least 15 minutes between sessions.
 8. For tasks due within 24 hours, schedule sessions today.
 9. Schedule sessions only within work hours: ${state.settings.workStart}–${state.settings.workEnd}.
